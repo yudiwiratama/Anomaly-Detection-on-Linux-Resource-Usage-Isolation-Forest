@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Conntrack Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Conntrack Dashboard</h1>
+            <p class="subtitle">Monitoring & Analisis Koneksi Network Linux</p>
+            <div class="header-controls">
+                <button id="refreshBtn" class="btn btn-primary">Refresh Data</button>
+                <span id="lastUpdate" class="last-update">-</span>
+                <label class="auto-refresh">
+                    <input type="checkbox" id="autoRefresh" checked>
+                    Auto-refresh (5s)
+                </label>
+                <div id="loadingIndicator" class="loading-indicator" style="display: none;">
+                    <span class="spinner"></span>
+                    <span>Loading...</span>
+                </div>
+            </div>
+            <div id="errorMessage" class="error-message" style="display: none;"></div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Koneksi</div>
+                <div class="stat-value" id="totalConnections">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Protocol Aktif</div>
+                <div class="stat-value" id="activeProtocols">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">State Unik</div>
+                <div class="stat-value" id="uniqueStates">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Total Bytes</div>
+                <div class="stat-value" id="totalBytes">0 B</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Bytes Sent</div>
+                <div class="stat-value" id="bytesSent">0 B</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Bytes Received</div>
+                <div class="stat-value" id="bytesReceived">0 B</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Waktu Update</div>
+                <div class="stat-value" id="updateTime">-</div>
+            </div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h2>Distribusi Protocol</h2>
+                <canvas id="protocolChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h2>Distribusi State</h2>
+                <canvas id="stateChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h2>Top 10 Source IP</h2>
+                <canvas id="sourceIpChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h2>Top 10 Destination IP</h2>
+                <canvas id="destIpChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h2>Top 10 Destination Ports</h2>
+                <canvas id="destPortChart"></canvas>
+            </div>
+            <div class="chart-card">
+                <h2>Protocol vs State Matrix</h2>
+                <canvas id="protocolStateChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Main Navigation Tabs -->
+        <div class="main-nav-tabs">
+            <button class="main-nav-tab active" data-section="overview">Overview</button>
+            <button class="main-nav-tab" data-section="timeseries">Time Series</button>
+            <button class="main-nav-tab" data-section="grouping">Grouping Statistics</button>
+            <button class="main-nav-tab" data-section="anomalies">Anomaly Detection</button>
+        </div>
+
+        <!-- Overview Section (default) -->
+        <div id="overviewSection" class="main-section active">
+            <div class="data-section">
+                <h2>Detail Koneksi</h2>
+                <div class="table-controls">
+                    <input type="text" id="searchInput" placeholder="Cari (IP, port, protocol, state)..." class="search-input">
+                    <select id="filterProtocol" class="filter-select">
+                        <option value="">Semua Protocol</option>
+                    </select>
+                    <select id="filterState" class="filter-select">
+                        <option value="">Semua State</option>
+                    </select>
+                    <select id="limitSelect" class="filter-select" title="Limit jumlah koneksi yang ditampilkan">
+                        <option value="10">10</option>
+                        <option value="100">100</option>
+                        <option value="1000" selected>1000</option>
+                        <option value="5000">5000</option>
+                        <option value="all">All</option>
+                    </select>
+                </div>
+                <div class="table-container">
+                    <table id="connectionsTable" class="data-table">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-sort="protocol">
+                                    Protocol <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="state">
+                                    State <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="src">
+                                    Source IP <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="sport">
+                                    Source Port <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="dst">
+                                    Destination IP <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="dport">
+                                    Destination Port <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="flags">
+                                    Flags <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="mark">
+                                    Mark <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="use">
+                                    Use <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="total_bytes">
+                                    Total Bytes <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="bytes_sent">
+                                    Bytes Sent <span class="sort-icon">↕</span>
+                                </th>
+                                <th class="sortable" data-sort="bytes_recv">
+                                    Bytes Received <span class="sort-icon">↕</span>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody id="connectionsTableBody">
+                            <tr>
+                                <td colspan="12" class="loading">Memuat data...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Time Series Section -->
+        <div id="timeseriesSection" class="main-section">
+            <div class="data-section">
+                <h2>Time Series Analytics</h2>
+                <div class="timeseries-controls">
+                    <select id="timeseriesMetricType" class="filter-select">
+                        <option value="by_protocol">By Protocol</option>
+                        <option value="by_state">By State</option>
+                        <option value="by_src_ip">By Source IP</option>
+                        <option value="by_dst_ip">By Destination IP</option>
+                        <option value="by_sport">By Source Port</option>
+                        <option value="by_dport">By Destination Port</option>
+                    </select>
+                    <select id="timeseriesMetricKey" class="filter-select">
+                        <option value="">All Metrics</option>
+                    </select>
+                    <select id="timeseriesHours" class="filter-select">
+                        <option value="1">Last 1 Hour</option>
+                        <option value="6" selected>Last 6 Hours</option>
+                        <option value="24">Last 24 Hours</option>
+                        <option value="168">Last 7 Days</option>
+                    </select>
+                    <select id="timeseriesInterval" class="filter-select">
+                        <option value="1">1 Minute</option>
+                        <option value="5" selected>5 Minutes</option>
+                        <option value="15">15 Minutes</option>
+                        <option value="60">1 Hour</option>
+                    </select>
+                    <button id="loadTimeseriesBtn" class="btn btn-primary">Load Time Series</button>
+                </div>
+                <div class="timeseries-chart-container">
+                    <div class="timeseries-chart-wrapper">
+                        <div class="chart-card">
+                            <h3>Time Series Chart</h3>
+                            <canvas id="timeseriesChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="timeseries-legend-sidebar">
+                        <h4>Metrics</h4>
+                        <div class="legend-controls">
+                            <input type="text" id="legendSearchInput" placeholder="Cari metric..." class="legend-search-input">
+                            <div class="legend-buttons">
+                                <button id="legendSelectAll" class="legend-btn">Select All</button>
+                                <button id="legendDeselectAll" class="legend-btn">Deselect All</button>
+                            </div>
+                        </div>
+                        <div id="timeseriesLegend" class="timeseries-legend-list">
+                            <!-- Legend items akan diisi oleh JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Anomaly Detection Section -->
+        <div id="anomaliesSection" class="main-section">
+            <div class="data-section">
+                <h2>Anomaly Detection</h2>
+                <p class="section-description" style="color: rgba(232, 234, 246, 0.7); margin-bottom: 20px;">
+                    Deteksi koneksi yang tidak biasa menggunakan Isolation Forest algorithm
+                </p>
+                
+                <!-- Advanced Parameters (Collapsible) -->
+                <div class="anomaly-params-section" style="margin-bottom: 20px;">
+                    <button id="toggleParamsBtn" class="btn btn-secondary" style="font-size: 0.9em; padding: 8px 15px;">
+                        <span id="toggleParamsText">⚙️ Advanced Parameters</span>
+                    </button>
+                    <div id="anomalyParamsPanel" style="display: none; margin-top: 15px; padding: 15px; background: rgba(15, 20, 25, 0.4); border-radius: 8px; border: 1px solid rgba(66, 133, 244, 0.3);">
+                        <h4 style="margin-top: 0; margin-bottom: 15px; color: #e8eaf6;">Isolation Forest Parameters</h4>
+                        <div class="param-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+                            <div class="param-item">
+                                <label for="contaminationInput" style="display: block; margin-bottom: 5px; color: rgba(232, 234, 246, 0.8); font-size: 0.9em;">
+                                    Contamination <span style="color: #4285f4;">(Default: 0.1)</span>
+                                </label>
+                                <input type="number" id="contaminationInput" class="filter-select" 
+                                       value="0.1" min="0.01" max="0.5" step="0.01" 
+                                       placeholder="0.1" style="width: 100%;">
+                                <small style="color: rgba(232, 234, 246, 0.6); font-size: 0.85em;">
+                                    Expected proportion of anomalies (0.01 - 0.5). Higher = more anomalies detected.
+                                </small>
+                            </div>
+                            <div class="param-item">
+                                <label for="nEstimatorsInput" style="display: block; margin-bottom: 5px; color: rgba(232, 234, 246, 0.8); font-size: 0.9em;">
+                                    N Estimators <span style="color: #4285f4;">(Default: 100)</span>
+                                </label>
+                                <input type="number" id="nEstimatorsInput" class="filter-select" 
+                                       value="100" min="10" max="500" step="10" 
+                                       placeholder="100" style="width: 100%;">
+                                <small style="color: rgba(232, 234, 246, 0.6); font-size: 0.85em;">
+                                    Number of trees (10 - 500). Higher = more accurate but slower.
+                                </small>
+                            </div>
+                        </div>
+                        <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid rgba(66, 133, 244, 0.2);">
+                            <button id="resetParamsBtn" class="btn btn-secondary" style="font-size: 0.85em; padding: 6px 12px;">
+                                Reset to Defaults
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="anomaly-controls">
+                    <button id="detectAnomaliesBtn" class="btn btn-primary">Detect Anomalies</button>
+                    <select id="anomalyLimitSelect" class="filter-select" title="Limit jumlah anomalies">
+                        <option value="10">Top 10</option>
+                        <option value="20" selected>Top 20</option>
+                        <option value="50">Top 50</option>
+                        <option value="100">Top 100</option>
+                        <option value="500">Top 500</option>
+                        <option value="1000">Top 1000</option>
+                        <option value="5000">Top 5000</option>
+                        <option value="all">All</option>
+                    </select>
+                    <input type="number" id="minScoreInput" class="filter-select" placeholder="Min Score (optional)" step="0.01" style="width: 150px;" title="Minimum anomaly score threshold (lower = more anomalous)">
+                </div>
+                <div id="anomalyStats" class="anomaly-stats" style="display: none;">
+                    <div class="stat-card" style="background: rgba(234, 67, 53, 0.2); border-color: rgba(234, 67, 53, 0.4);">
+                        <div class="stat-label">Anomalies Detected</div>
+                        <div class="stat-value" id="anomalyCount">0</div>
+                    </div>
+                    <div class="stat-card" style="background: rgba(251, 188, 4, 0.2); border-color: rgba(251, 188, 4, 0.4);">
+                        <div class="stat-label">Anomaly Rate</div>
+                        <div class="stat-value" id="anomalyRate">0%</div>
+                    </div>
+                    <div class="stat-card" style="background: rgba(66, 133, 244, 0.2); border-color: rgba(66, 133, 244, 0.4);">
+                        <div class="stat-label">Total Connections</div>
+                        <div class="stat-value" id="anomalyTotalConnections">0</div>
+                    </div>
+                </div>
+                <div id="anomaliesContent" class="anomalies-content" style="margin-top: 20px;">
+                    <div class="table-container">
+                        <table id="anomaliesTable" class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Anomaly Score</th>
+                                    <th>Protocol</th>
+                                    <th>State</th>
+                                    <th>Source IP</th>
+                                    <th>Source Port</th>
+                                    <th>Destination IP</th>
+                                    <th>Destination Port</th>
+                                    <th>Total Bytes</th>
+                                    <th>Bytes Sent</th>
+                                    <th>Bytes Received</th>
+                                </tr>
+                            </thead>
+                            <tbody id="anomaliesTableBody">
+                                <tr>
+                                    <td colspan="10" class="loading">Klik "Detect Anomalies" untuk memulai</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Grouping Statistics Section -->
+        <div id="groupingSection" class="main-section">
+            <div class="data-section">
+                <h2>Grouping & Counting Statistics</h2>
+                <div class="grouping-tabs">
+                    <button class="grouping-tab active" data-group="by_protocol">By Protocol</button>
+                    <button class="grouping-tab" data-group="by_state">By State</button>
+                    <button class="grouping-tab" data-group="by_src_ip">By Source IP</button>
+                    <button class="grouping-tab" data-group="by_dst_ip">By Destination IP</button>
+                    <button class="grouping-tab" data-group="by_sport">By Source Port</button>
+                    <button class="grouping-tab" data-group="by_dport">By Destination Port</button>
+                    <button class="grouping-tab" data-group="by_port">By Port (Combined)</button>
+                </div>
+                <div class="table-controls">
+                    <input type="text" id="groupingSearchInput" placeholder="Cari (IP, port, protocol, state)..." class="search-input">
+                    <select id="groupingLimitSelect" class="filter-select" title="Limit jumlah data yang ditampilkan">
+                        <option value="10">10</option>
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                        <option value="500">500</option>
+                        <option value="all">All</option>
+                    </select>
+                </div>
+                <div id="groupingContent" class="grouping-content">
+                    <div class="grouping-stats-grid" id="groupingStatsGrid">
+                        <!-- Stats akan diisi oleh JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Define loadAnomalies immediately as a fallback
+        window.loadAnomalies = window.loadAnomalies || function() {
+            console.warn('loadAnomalies called but not yet loaded, waiting...');
+            setTimeout(() => {
+                if (typeof window.loadAnomalies === 'function' && window.loadAnomalies.toString().includes('async')) {
+                    console.log('loadAnomalies now available, retrying...');
+                    window.loadAnomalies();
+                } else {
+                    console.error('loadAnomalies still not available');
+                }
+            }, 100);
+        };
+    </script>
+    <script src="/static/dashboard.js"></script>
+</body>
+</html>
+
